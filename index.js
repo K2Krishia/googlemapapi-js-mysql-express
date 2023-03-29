@@ -8,6 +8,8 @@ function initMap() {
     mapId: '52c44134c7a98f62',
   });
 
+  let locations = [];
+
   // get user locations from sql database that we integrated into express api
   fetch('http://localhost:3000/users')
     .then(response => response.json())
@@ -18,60 +20,74 @@ function initMap() {
         let coor = user.GEO_LCTN.replace(' ', '').split(",")
         let lat = parseFloat(coor[0])
         let lng = parseFloat(coor[1])
-        addMarker({lat: lat, lng: lng});
+        locations.push({lat: lat, lng: lng});
+        //addMarker({lat: lat, lng: lng});
         usersMarked += 1;
       });
       console.log(`Users marked on map: ${usersMarked}`);
+
+      let locationBatches = groupBy25(locations);
+      locationBatches.forEach(loc => processDistanceMatrix(loc));
     });
 
-  // two locations to get distance
-  let sogod = {lat: 10.4329, lng: 124.9948};
-  let libagon = {lat: 10.37, lng: 125.07}
-  let loc1 = new google.maps.Marker({
-    position: sogod,
-    map: map,
-    icon: 'img/your-location-24.png',
-  })
-  let loc2 = new google.maps.Marker({
-    position: libagon,
-    map: map,
-    icon: 'img/your-location-24.png',
-  })
-  // Draw a line showing the straight distance between the markers
-  let displacement = new google.maps.Polyline({path: [sogod, libagon], map: map});
-  // Calculate and display the distance between markers
-  let distance = displacementDistance(loc1, loc2);
-  document.getElementById('msg').innerHTML = "Distance between markers: " + distance.toFixed(2) + " km,";
+    function processDistanceMatrix(locations) {
+      // ---Distance Matrix---
+      const service = new google.maps.DistanceMatrixService(); // instantiate Distance Matrix service
+      // tricky part
+      locations.forEach(loc => {
+        let otherLocations = locations.filter((x, index) => index !== locations.indexOf(loc));
+        let matrixOptions = {
+          origins: otherLocations, // all locations except the one being processed
+          destinations: [loc], // the one being processed
+          travelMode: 'DRIVING',
+          unitSystem: google.maps.UnitSystem.METRIC // IMPERIAL if in miles
+        };
+        // Call Distance Matrix service
+        service.getDistanceMatrix(matrixOptions, callback);
 
-  // --- Route Distance ---
-  let directionsService = new google.maps.DirectionsService();
-  let directionsRenderer = new google.maps.DirectionsRenderer();
-  directionsRenderer.setMap(map); // Existing map object displays directions
-  // Create route from existing points used for markers
-  const route = {
-      origin: libagon,
-      destination: sogod,
-      travelMode: 'DRIVING' // BICYCLING, TRANSIT, and WALKING
-  }
+        // Callback function used to process Distance Matrix response
+        function callback(response, status) {
+          if (status !== "OK") {
+            alert(status);
+            return;
+          }
+          let nearestLocation = getNearestLocation(matrixOptions.origins, response);
 
-  directionsService.route(route,
-    function(response, status) { // anonymous function to capture directions
-      if (status !== 'OK') {
-        window.alert('Directions request failed due to ' + status);
-        return;
-      } else {
-        console.log(response);
-        directionsRenderer.setDirections(response); // Add route to the map
-        let directionsData = response.routes[0].legs[0]; // Get data about the mapped route
-        if (!directionsData) {
-          window.alert('Directions request failed');
-          return;
+          // TODO: Condition if within threshold
+          let polyColor = nearestLocation.distValue < 1 ? 'red' : 'blue';
+
+          // display distance in map if within threshold
+          let directionsService = new google.maps.DirectionsService();
+          let directionsRenderer = new google.maps.DirectionsRenderer({ polylineOptions: { strokeColor: polyColor }, markerOptions: {icon: 'img/your-location-24.png'} });
+          directionsRenderer.setMap(map);
+
+          // Create route from existing points used for markers
+          const route = {
+              origin: nearestLocation.coor,
+              destination: loc,
+              travelMode: 'DRIVING', // BICYCLING, TRANSIT, and WALKING
+          }
+
+          directionsService.route(route,
+            function(response, status) { // anonymous function to capture directions
+              if (status !== 'OK') {
+                window.alert('Directions request failed due to ' + status);
+                return;
+              } else {
+                directionsRenderer.setDirections(response); // Add route to the map
+                let directionsData = response.routes[0].legs[0]; // Get data about the mapped route
+                if (!directionsData) {
+                  window.alert('Directions request failed');
+                  return;
+                }
+                else {
+                  document.getElementById('msg').innerHTML += " Driving distance is " + directionsData.distance.text + " (" + directionsData.duration.text + ")." + "<br/>";
+                }
+              }
+            });
         }
-        else {
-          document.getElementById('msg').innerHTML += " Driving distance is " + directionsData.distance.text + " (" + directionsData.duration.text + ").";
-        }
-      }
-    });
+      })
+    }
 }
 
 function addMarker(coordinates) {
@@ -82,15 +98,17 @@ function addMarker(coordinates) {
   })
 }
 
-function displacementDistance(loc1, loc2) {
-  let R = 6371.0710; // Radius of the Earth in miles: 3958.8 ; in kilometers: 6371.0710
-  let rlat1 = loc1.position.lat() * (Math.PI / 180); // Convert degrees to radians
-  let rlat2 = loc2.position.lat() * (Math.PI / 180); // Convert degrees to radians
-  let difflat = rlat2 - rlat1; // Radian difference (latitudes)
-  let difflon = (loc2.position.lng() - loc1.position.lng()) * (Math.PI / 180); // Radian difference (longitudes)
+function getNearestLocation(origins, response) {
+  const distances = response.rows.map((row) => row.elements[0].distance.value);
+  const distanceToDestinations = distances.map((distance) => distance / 1000);
+  const nearestIndex = distanceToDestinations.indexOf(Math.min(...distanceToDestinations));
 
-  let distance = 2 * R * Math.asin(Math.sqrt(Math.sin(difflat / 2) * Math.sin(difflat / 2) + Math.cos(rlat1) * Math.cos(rlat2) * Math.sin(difflon / 2) * Math.sin(difflon / 2)));
-  return distance;
+  return {coor: origins[nearestIndex], distValue: distanceToDestinations[nearestIndex]};
+};
+
+function groupBy25(arr) {
+  const numGroups = Math.ceil(arr.length / 25);
+  return Array.from({ length: numGroups }, (_, i) => arr.slice(i * 25, (i + 1) * 25));
 }
 
 window.initMap = initMap;
