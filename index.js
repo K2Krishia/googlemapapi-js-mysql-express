@@ -5,7 +5,7 @@ function initMap() {
   map = new google.maps.Map(document.getElementById("map"), {
     center: { lat: 12.8797, lng: 121.7740 },
     zoom: 6,
-    mapId: '52c44134c7a98f62',
+    mapId: MAP_ID, // replace with your map ID
   });
 
   let locations = [];
@@ -53,8 +53,8 @@ function initMap() {
           }
           let nearestLocation = getNearestLocation(matrixOptions.origins, response);
 
-          // TODO: Condition if within threshold
-          let polyColor = nearestLocation.distValue < 1 ? 'red' : 'blue';
+          // Condition if within threshold
+          let polyColor = nearestLocation.distValue < 50 ? 'red' : 'blue'; // 50 meters threshold
 
           // display distance in map if within threshold
           let directionsService = new google.maps.DirectionsService();
@@ -103,7 +103,7 @@ function getNearestLocation(origins, response) {
   const distanceToDestinations = distances.map((distance) => distance / 1000);
   const nearestIndex = distanceToDestinations.indexOf(Math.min(...distanceToDestinations));
 
-  return {coor: origins[nearestIndex], distValue: distanceToDestinations[nearestIndex]};
+  return {coor: origins[nearestIndex], distValue: distances[nearestIndex]};
 };
 
 function groupBy25(arr) {
