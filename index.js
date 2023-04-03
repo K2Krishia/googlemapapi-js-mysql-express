@@ -9,6 +9,7 @@ function initMap() {
   });
 
   let locations = [];
+  let flaggedLocations = [];
 
   // get user locations from sql database that we integrated into express api
   fetch('http://localhost:3000/users')
@@ -28,6 +29,8 @@ function initMap() {
 
       let locationBatches = groupBy25(locations);
       locationBatches.forEach(loc => processDistanceMatrix(loc));
+
+      console.log(flaggedLocations);
     });
 
     function processDistanceMatrix(locations) {
@@ -52,13 +55,17 @@ function initMap() {
             return;
           }
           let nearestLocation = getNearestLocation(matrixOptions.origins, response);
+          if (nearestLocation.distValue < 50) {
+            flaggedLocations.push(nearestLocation.coor)
+          }
 
           // Condition if within threshold
           let polyColor = nearestLocation.distValue < 50 ? 'red' : 'blue'; // 50 meters threshold
+          let markerIcon = nearestLocation.distValue < 50 ? 'img/location-red-24.png' : 'img/location-blue-24.png';
 
           // display distance in map if within threshold
           let directionsService = new google.maps.DirectionsService();
-          let directionsRenderer = new google.maps.DirectionsRenderer({ polylineOptions: { strokeColor: polyColor }, markerOptions: {icon: 'img/your-location-24.png'} });
+          let directionsRenderer = new google.maps.DirectionsRenderer({ polylineOptions: { strokeColor: polyColor }, markerOptions: {icon: markerIcon} });
           directionsRenderer.setMap(map);
 
           // Create route from existing points used for markers
@@ -75,14 +82,14 @@ function initMap() {
                 return;
               } else {
                 directionsRenderer.setDirections(response); // Add route to the map
-                let directionsData = response.routes[0].legs[0]; // Get data about the mapped route
-                if (!directionsData) {
-                  window.alert('Directions request failed');
-                  return;
-                }
-                else {
-                  document.getElementById('msg').innerHTML += " Driving distance is " + directionsData.distance.text + " (" + directionsData.duration.text + ")." + "<br/>";
-                }
+                // let directionsData = response.routes[0].legs[0]; // Get data about the mapped route
+                // if (!directionsData) {
+                //   window.alert('Directions request failed');
+                //   return;
+                // }
+                // else {
+                //   document.getElementById('msg').innerHTML += " Driving distance is " + directionsData.distance.text + " (" + directionsData.duration.text + ")." + "<br/>";
+                // }
               }
             });
         }
